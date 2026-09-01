@@ -1,6 +1,6 @@
 -- {-# OPTIONS --cubical-compatible --safe #-}
 
-module essay_v01 where
+module essay.essay_v01 where
 
 open import Agda.Builtin.Nat
 open import Agda.Builtin.String
