@@ -1,2 +1,2 @@
-.tmp
-*.agdai
+_build/
+external/
