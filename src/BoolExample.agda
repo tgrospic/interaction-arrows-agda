@@ -12,6 +12,7 @@ open import src.Game
 open import src.Arena
 open import src.Strategy
 open import src.InteractionArrow
+open import src.Extensional
 
 data Side : Set where left right : Side
 
@@ -71,10 +72,12 @@ Bool⊥ = Maybe Bool
 
 -- A pair of possibly-undefined inputs is a context on the same arena the AND
 -- strategies live on.
+flat-value : Bool⊥ × Bool⊥ → ⟦ Inputs ⟧P
+flat-value p left  = proj₁ p
+flat-value p right = proj₂ p
+
 flat-context : Bool⊥ × Bool⊥ → PEnv (val Inputs ⊸ val Output)
-flat-context p (inj₁ left)  = proj₁ p
-flat-context p (inj₁ right) = proj₂ p
-flat-context p (inj₂ ())
+flat-context p = envOfP {Inputs} {Output} (flat-value p)
 
 evalP : BoolStrategy → Bool⊥ × Bool⊥ → Bool⊥
 evalP s p = runP s (flat-context p)
@@ -85,21 +88,30 @@ por (_          , just true)   = just true
 por (just false , just false)  = just false
 por (_          , _)           = nothing
 
-Realizes : BoolStrategy → (Bool⊥ × Bool⊥ → Bool⊥) → Set
-Realizes s f = ∀ p → evalP s p ≡ f p
+RealizesTree : BoolStrategy → (Bool⊥ × Bool⊥ → Bool⊥) → Set
+RealizesTree s f = ∀ p → evalP s p ≡ f p
 
-no-return-por : ∀ b → ¬ Realizes (return b) por
+no-return-por : ∀ b → ¬ RealizesTree (return b) por
 no-return-por false realizes with realizes (just true , just true)
 ... | ()
 no-return-por true  realizes with realizes (just false , just false)
 ... | ()
 
 -- Whichever input it inspects first, a context can decline exactly that one
--- while answering the other, so no dialogue tree realizes parallel-or.
-no-sequential-por : ¬ (Σ BoolStrategy (λ s → Realizes s por))
-no-sequential-por (return b , realizes) = no-return-por b realizes
-no-sequential-por (ask (inj₁ left)  k , realizes) with realizes (nothing , just true)
+-- while answering the other, so no finite BoolStrategy realizes parallel-or.
+no-sequential-por-tree : ¬ (Σ BoolStrategy (λ s → RealizesTree s por))
+no-sequential-por-tree (return b , realizes) = no-return-por b realizes
+no-sequential-por-tree (ask (inj₁ left)  k , realizes) with realizes (nothing , just true)
 ... | ()
-no-sequential-por (ask (inj₁ right) k , realizes) with realizes (just true , nothing)
+no-sequential-por-tree (ask (inj₁ right) k , realizes) with realizes (just true , nothing)
 ... | ()
-no-sequential-por (ask (inj₂ ()) k , realizes)
+no-sequential-por-tree (ask (inj₂ ()) k , realizes)
+
+-- The theorem in the arrow: no morphism `val Inputs -i> val Output` has
+-- parallel-or as its partial extensional collapse.
+Realizes : (val Inputs -i> val Output) → (Bool⊥ × Bool⊥ → Bool⊥) → Set
+Realizes σ f = ∀ p → extP {Inputs} {Output} σ (flat-value p) tt ≡ f p
+
+no-sequential-por : ¬ (Σ (val Inputs -i> val Output) (λ σ → Realizes σ por))
+no-sequential-por (σ , realizes) =
+  no-sequential-por-tree (respond σ (inj₂ tt) , realizes)

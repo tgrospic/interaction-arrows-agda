@@ -1,6 +1,7 @@
 module src.Extensional where
 
 open import Data.Empty using (⊥; ⊥-elim)
+open import Data.Maybe using (Maybe)
 open import Data.Sum using (_⊎_; inj₁; inj₂)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl; sym; trans)
 open import src.Game
@@ -36,6 +37,18 @@ ext-compose : ∀ {A B C : Game} (g : val B -i> val C) (f : val A -i> val B) →
 ext-compose {A} {B} {C} g f ρ q =
   trans (run-interact (val A) B (val C) (respond g (inj₂ q)) f (envOf {A} {C} ρ))
         (run-cong (respond g (inj₂ q)) (mid-envOf {A} {B} {C} f ρ))
+
+-- The partial counterpart of `ext`: a value whose questions a context may
+-- decline to answer, and an observation that may therefore go missing.
+⟦_⟧P : Game → Set
+⟦ A ⟧P = (q : Question A) → Maybe (Answer A q)
+
+envOfP : ∀ {A B : Game} → ⟦ A ⟧P → PEnv (val A ⊸ val B)
+envOfP ρ (inj₁ a) = ρ a
+envOfP ρ (inj₂ ())
+
+extP : ∀ {A B : Game} → val A -i> val B → ⟦ A ⟧P → (q : Question B) → Maybe (Answer B q)
+extP {A} {B} σ ρ q = runP (respond σ (inj₂ q)) (envOfP {A} {B} ρ)
 
 I : Game
 Question I = ⊥
