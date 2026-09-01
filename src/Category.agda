@@ -34,8 +34,8 @@ record SetoidCategory (Obj : Set₁) : Set₂ where
     associativity : ∀ {A B C D} (h : hom C D) (g : hom B C) (f : hom A B) →
                     compose (compose h g) f ≋ compose h (compose g f)
 
--- The interaction category: strategies on `val A ⊸ val B`, up to contextual
--- equivalence.
+-- The first-order value-game category: strategies on `val A ⊸ val B`, up to
+-- partial-environment observational equality.
 interaction : SetoidCategory Game
 interaction = record
   { Hom           = λ A B → StrategySetoid (val A ⊸ val B)
@@ -47,10 +47,9 @@ interaction = record
   ; associativity = assoc
   }
 
--- Observation as a functor into functions between game values, compared
--- pointwise. The target is spelled out rather than bundled as a category:
--- composition of functions respects pointwise equality only given
--- extensionality, which this development does not assume.
+-- The observation homomorphism into ordinary functions, compared pointwise.
+-- Its target operations are spelled out rather than bundled as a second
+-- category; that is only a choice of scope.
 record SetoidFunctor (C : SetoidCategory Game) : Set₁ where
   open SetoidCategory C
   field

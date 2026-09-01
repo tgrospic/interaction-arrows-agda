@@ -60,8 +60,9 @@ hide = interact
 
 -- Composition, with a value arena in the middle.
 --
--- The outer arenas A and C stay fully general, so higher-order arenas compose
--- on the outside. The middle is restricted to `val B` deliberately. With a
+-- The outer arenas A and C stay fully general in this standalone operator, so
+-- arena expressions can occur there. The middle is restricted to `val B`
+-- deliberately. With a
 -- general arena there, the two strategies can question each other back and
 -- forth across it: a P-question of the middle raised by σ has to be answered
 -- by τ, whose answer may raise another, and the recursion stops being
@@ -167,7 +168,7 @@ midP-id B C ρ (inj₁ b) with ρ (inj₁ b)
 ... | just r  = refl
 midP-id B C ρ (inj₂ c) = refl
 
--- The category laws, at the contextual relation.
+-- The category laws, at partial-environment observational equality.
 left-id : ∀ {A} {B : Game} (f : A -i> val B) → id-i ∘i f ≈obs f
 left-id {A} {B} f (inj₁ a) ρ =
   trans (runP-shift A B (val B) (respond f (inj₁ a)) ρ)
@@ -243,7 +244,7 @@ assoc-ext : ∀ {A D} {B C′ : Game}
 assoc-ext {A} {D} {B} {C′} h g f =
   ≈obs⇒≈ext {A ⊸ D} {(h ∘i g) ∘i f} {h ∘i (g ∘i f)} (assoc h g f)
 
--- Composition respects contextual equivalence.
+-- Composition respects partial-environment observational equality.
 midP-cong : ∀ (A : Arena) (B : Game) (C : Arena) {f f′ : A -i> val B} →
             f ≈obs f′ → (ρ : PEnv (A ⊸ C)) → ∀ q →
             midP A B C f ρ q ≡ midP A B C f′ ρ q

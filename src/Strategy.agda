@@ -46,9 +46,8 @@ _≈ext_ : ∀ {G} → Strategy G → Strategy G → Set
 ≈ext-trans : ∀ {G} {σ τ υ : Strategy G} → σ ≈ext τ → τ ≈ext υ → σ ≈ext υ
 ≈ext-trans e₁ e₂ q ρ = trans (e₁ q ρ) (e₂ q ρ)
 
--- Contexts. A context may decline to answer, which is what lets it observe the
--- order in which a strategy asks its questions; with total environments every
--- context is itself extensional and observes nothing beyond the induced function.
+-- Partial environments may decline to answer, which lets them observe query
+-- order. This is a concrete observational proxy, not a type of general tests.
 PEnv : Arena → Set
 PEnv G = (q : PQ G) → Maybe (PA G q)
 
@@ -76,8 +75,8 @@ _≈obs_ : ∀ {G} → Strategy G → Strategy G → Set
 ≈obs-trans : ∀ {G} {σ τ υ : Strategy G} → σ ≈obs τ → τ ≈obs υ → σ ≈obs υ
 ≈obs-trans e₁ e₂ q ρ = trans (e₁ q ρ) (e₂ q ρ)
 
--- Contextual equivalence refines extensional equality: a total environment is
--- just a context that always answers.
+-- Partial-environment observation refines extensional equality: a total
+-- environment is a partial one that always answers.
 ≈obs⇒≈ext : ∀ {G} {σ τ : Strategy G} → σ ≈obs τ → σ ≈ext τ
 ≈obs⇒≈ext {G} {σ} {τ} e q ρ =
   just-injective
@@ -93,7 +92,7 @@ _≈obs_ : ∀ {G} → Strategy G → Strategy G → Set
   ; trans = λ {σ} {τ} {υ} → ≈obs-trans {G} {σ} {τ} {υ}
   }
 
--- The hom-setoid is the contextual one.
+-- The hom-setoid uses partial-environment observation.
 StrategySetoid : Arena → Setoid 0ℓ 0ℓ
 StrategySetoid G = record
   { Carrier       = Strategy G

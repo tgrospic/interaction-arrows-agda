@@ -37,8 +37,8 @@ mutual
   PA (A ^⊥)  q = OA A q
   PA (A ⊗ B) = [ PA A , PA B ]
 
--- Linear implication, exactly A^⊥ ⊗ B: play opens in B because after the
--- inversion every opening move of A belongs to Player.
+-- Linear implication as A^⊥ ⊗ B. For `val A ⊸ B`, play opens in B because
+-- `PQ (val A)` is empty. General arenas need enabling to force that property.
 infixr 20 _⊸_
 _⊸_ : Arena → Arena → Arena
 A ⊸ B = (A ^⊥) ⊗ B

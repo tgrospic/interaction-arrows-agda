@@ -17,7 +17,7 @@ open import src.BoolExample
 --
 -- andLR and andRL query their inputs in opposite orders. Propositional
 -- equality separates them as syntax. Extensional equality identifies them,
--- because they induce the same Boolean function. Contextual equivalence
+-- because they induce the same Boolean function. Partial-environment observation
 -- separates them again, and it is the relation the category laws are proved
 -- against, so the intensional content is inside the theory rather than beside it.
 
@@ -40,8 +40,8 @@ andLR-i≈ext-andRL-i (inj₂ tt) ρ =
         (trans (same-ext (ρ (inj₁ left) , ρ (inj₁ right)))
                (run-cong andRL (env-eq ρ)))
 
--- 3. Contextual equivalence does. This context answers the right input and
--- declines the left one, so it observes which question is asked first.
+-- 3. Partial-environment observation does. This environment answers the right
+-- input and declines the left one, so it observes which question is asked first.
 right-only : PEnv (val Inputs ⊸ val Output)
 right-only = flat-context (nothing , just false)
 
