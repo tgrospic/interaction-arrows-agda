@@ -1,0 +1,34 @@
+name: 🔷 Proof Check
+
+on:
+  push:
+    branches:
+    - master
+    tags: '**'
+  pull_request:
+    branches:
+    - master
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: 🔷 Agda
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Install Agda and standard library
+      uses: agda/agda-setup-action@v1
+      with:
+        agda-version: '2.8.0'
+        agda-stdlib-version: '2.4'
+
+    - name: Install Just
+      uses: extractions/setup-just@v4
+
+    - name: 🔷 Run the proofs
+      run: just ci

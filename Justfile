@@ -1,154 +1,169 @@
-# Helper commands for this Agda project.
-# Run `just` to list, `just <recipe> --help` is not a thing; see COMMANDS.md for the raw commands.
+# Commands for the interaction-arrow Agda development.
+# Run `just` to list them. Override the compiler with `AGDA=/path/to/agda`.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-# Agda dies printing its own Unicode error messages without a UTF-8 locale.
 export LC_ALL := "C.UTF-8"
 
 agda := env_var_or_default("AGDA", "agda")
-sources := "essay scratch"
 
-# List available recipes.
+# List the available commands.
 default:
     @just --list --unsorted
 
-# Which agda, which version, where its data and config live.
+# Show the active Agda executable, version, directories, and registered libraries.
 info:
-    @echo "binary:   $(command -v {{agda}})"
-    @{{agda}} --version
-    @echo "data dir: $({{agda}} --print-agda-data-dir)"
-    @echo "app dir:  $({{agda}} --print-agda-app-dir)"
-    @echo "libraries:"
-    @sed 's/^/  /' ~/.config/agda/libraries 2>/dev/null || echo "  (none registered)"
+    #!/usr/bin/env bash
+    command -v {{agda}}
+    {{agda}} --version
+    echo "data: $({{agda}} --print-agda-data-dir)"
+    app=$({{agda}} --print-agda-app-dir)
+    echo "config: $app"
+    echo "libraries:"
+    found=0
+    while IFS= read -r file; do
+      [ -f "$file" ] || continue
+      found=1
+      printf "  %-28s %s\n" "$(sed -n 's/^name:[[:space:]]*//p' "$file")" "$file"
+    done < "$app/libraries" 2>/dev/null || true
+    [ "$found" -eq 1 ] || echo "  (none found)"
 
-# Check the install is usable: data dir writable, stdlib registered, locale sane.
+# Verify that Agda, the project, and its standard-library dependency are usable.
 doctor:
     #!/usr/bin/env bash
-    set -uo pipefail
-    d=$({{agda}} --print-agda-data-dir)
-    prim="$d/lib/prim"
-    n=$(find "$prim" -name '*.agdai' 2>/dev/null | wc -l)
-    if [ -w "$prim" ]; then
-      echo "ok    prim writable: $prim"
-    elif [ "$n" -gt 0 ]; then
-      echo "ok    prim read-only but has $n prebuilt interfaces: $prim"
-    else
-      echo "FAIL  prim read-only with no prebuilt interfaces: $prim"
-      echo "      every load will try to create $prim/_build and be denied."
-      echo "      fix: mkdir -p ~/.local/share/agda && export Agda_datadir=\$HOME/.local/share/agda && agda --setup"
-    fi
-    if grep -q . ~/.config/agda/libraries 2>/dev/null
-      then echo "ok    $(grep -c . ~/.config/agda/libraries) librar(y/ies) registered"
-      else echo "FAIL  none registered; run 'just setup-stdlib'"; fi
-    echo "ok    locale $LC_ALL"
+    echo "locale: $LC_ALL"
+    {{agda}} --version
+    {{agda}} --only-scope-checking src/Game.agda
+    echo "OK: Agda can load this project"
 
-# Register the standard library (autodetects the Debian and Arch paths).
-setup-stdlib:
+# Run the complete local and CI gate.
+ci: doctor check-all
+
+# Show the project requirement and every registered stdlib.
+stdlib-info:
     #!/usr/bin/env bash
-    set -euo pipefail
-    mkdir -p ~/.config/agda
-    for p in /usr/share/agda-stdlib/standard-library.agda-lib \
-             /usr/share/agda/lib/standard-library.agda-lib; do
-      if [ -f "$p" ]; then
-        grep -qxF "$p" ~/.config/agda/libraries 2>/dev/null || echo "$p" >> ~/.config/agda/libraries
-        echo "registered $p"
-      fi
-    done
-    grep -qx standard-library ~/.config/agda/defaults 2>/dev/null || echo standard-library >> ~/.config/agda/defaults
+    echo "Agda:   $({{agda}} --version | head -1)"
+    echo "Project: $(sed -n 's/^depend:[[:space:]]*//p' interaction-arrows-agda.agda-lib)"
+    app=$({{agda}} --print-agda-app-dir)
+    echo "Registered:"
+    found=0
+    while IFS= read -r file; do
+      [ -f "$file" ] || continue
+      found=1
+      printf "  %-28s %s\n" "$(sed -n 's/^name:[[:space:]]*//p' "$file")" "$file"
+    done < "$app/libraries" 2>/dev/null || true
+    [ "$found" -eq 1 ] || echo "  (none)"
 
-# Type-check one module.  just check scratch/pico.agda
+# Register an existing standard-library manifest with Agda.
+stdlib-register FILE:
+    #!/usr/bin/env bash
+    manifest=$(realpath "{{FILE}}")
+    [ -f "$manifest" ] || { echo "not found: $manifest"; exit 1; }
+    name=$(sed -n 's/^name:[[:space:]]*//p' "$manifest")
+    [ -n "$name" ] || { echo "missing name in $manifest"; exit 1; }
+    app=$({{agda}} --print-agda-app-dir)
+    mkdir -p "$app"
+    touch "$app/libraries"
+    grep -qxF "$manifest" "$app/libraries" || printf '%s\n' "$manifest" >> "$app/libraries"
+    echo "registered $name"
+
+# Select a registered version for this project: `just stdlib-use 2.4`.
+stdlib-use VERSION:
+    #!/usr/bin/env bash
+    version="{{VERSION}}"
+    [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "invalid version: $version"; exit 1; }
+    name="standard-library-$version"
+    app=$({{agda}} --print-agda-app-dir)
+    found=0
+    while IFS= read -r file; do
+      [ -f "$file" ] || continue
+      [ "$(sed -n 's/^name:[[:space:]]*//p' "$file")" = "$name" ] && found=1
+    done < "$app/libraries" 2>/dev/null || true
+    [ "$found" -eq 1 ] || { echo "$name is not registered; install or register it first"; exit 1; }
+    sed -i -E "s/^depend:.*/depend: $name/" interaction-arrows-agda.agda-lib
+    echo "project now uses $name"
+
+# Clone, register, and select an upstream stdlib release in the user data folder.
+stdlib-install VERSION:
+    #!/usr/bin/env bash
+    version="{{VERSION}}"
+    [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "invalid version: $version"; exit 1; }
+    base="${XDG_DATA_HOME:-$HOME/.local/share}/agda/libraries"
+    target="$base/agda-stdlib-$version"
+    mkdir -p "$base"
+    if [ ! -e "$target" ]; then
+      git clone --depth 1 --branch "v$version" \
+        https://github.com/agda/agda-stdlib.git "$target"
+    fi
+    [ -f "$target/standard-library.agda-lib" ] || { echo "invalid installation: $target"; exit 1; }
+    just stdlib-register "$target/standard-library.agda-lib"
+    just stdlib-use "$version"
+    echo "installed standard-library-$version in $target"
+
+# Type-check one module: `just check src/BoolExample.agda`.
 check FILE:
     {{agda}} "{{FILE}}"
 
-# Type-check every module, with a pass/fail summary.
+# Type-check every module under src/ and print a compact summary.
 check-all:
     #!/usr/bin/env bash
-    set -uo pipefail
-    if {{agda}} --help 2>&1 | grep -q -- '--build-library'; then
-      exec {{agda}} --build-library
-    fi
-    pass=0; fail=0
-    for f in $(find {{sources}} -name '*.agda' | sort); do
-      if {{agda}} "$f" >/tmp/agda-check.log 2>&1; then
-        echo "PASS  $f"; pass=$((pass+1))
+    log=$(mktemp)
+    trap 'rm -f "$log"' EXIT
+    mapfile -t files < <(find src -type f -name '*.agda' | sort)
+    pass=0
+    for file in "${files[@]}"; do
+      if {{agda}} "$file" >"$log" 2>&1; then
+        echo "PASS  $file"
+        pass=$((pass + 1))
       else
-        echo "FAIL  $f"; grep -v '^Checking' /tmp/agda-check.log | grep -v '^$' | head -3 | sed 's/^/        /'
-        fail=$((fail+1))
+        echo "FAIL  $file"
+        sed 's/^/      /' "$log"
+        exit 1
       fi
     done
-    echo "--- $pass pass / $fail fail ---"
-    [ "$fail" -eq 0 ]
+    echo "$pass/${#files[@]} modules passed"
 
-# Scope-check only: fast structural pass over one module.
+# Alias for `check-all`.
+test: check-all
+
+# Quickly scope-check one module without full type-checking.
 scope FILE:
     {{agda}} --only-scope-checking "{{FILE}}"
 
-# Re-check from scratch, ignoring cached interfaces.
+# Scope-check every module under src/.
+scope-all:
+    #!/usr/bin/env bash
+    mapfile -t files < <(find src -type f -name '*.agda' | sort)
+    for file in "${files[@]}"; do
+      echo "SCOPE $file"
+      {{agda}} --only-scope-checking "$file"
+    done
+
+# Recheck a module without using cached interface files.
 recheck FILE:
     {{agda}} --ignore-interfaces "{{FILE}}"
 
-# Where time goes when a module is slow to check.
+# Show module-level type-checking timings.
 profile FILE:
     {{agda}} --profile=modules "{{FILE}}"
 
-# Compile a module with a `main` to an executable via GHC.
+# Compile a module containing `main` through GHC into build/.
 compile FILE:
     {{agda}} --compile --compile-dir=build "{{FILE}}"
 
-# Render a module and its dependencies to clickable HTML in html/.
+# Generate browsable HTML for a module in html/.
 html FILE:
     {{agda}} --html "{{FILE}}"
-    @echo "open html/$(basename "{{FILE}}" .agda).html"
+    @echo "generated html/$(basename "{{FILE}}" .agda).html"
 
-# Which modules currently have interfaces, meaning they checked clean.
-ifaces:
-    @find _build -name '*.agdai' 2>/dev/null | sed 's|_build/||' | sort || echo "(nothing built)"
+# List cached Agda interface files.
+interfaces:
+    @find _build -type f -name '*.agdai' 2>/dev/null | sort || true
 
-# Audit module declarations against file paths.  A mismatch is a hard error in Agda.
+# Show module declarations alongside their source paths.
 modules:
-    @grep -rn '^module' --include=*.agda {{sources}} | sed 's/:[0-9]*:module/  ->/' | sort
+    @rg -n '^module ' src --glob '*.agda' | sort
 
-# Clone Conal's Agda repos into external/ and register the library ones.
-fetch:
-    ./scripts/fetch-conal.sh
-
-# Same, plus the agda-categories fork that agda-cat-linear needs.
-fetch-all:
-    WITH_CATEGORIES=1 ./scripts/fetch-conal.sh
-
-# Type-check Conal's felix library (the cd matters: include set comes from cwd).
-felix:
-    cd external/felix && {{agda}} src/Felix/All.agda
-
-# Type-check felix-boolean, which depends on felix being registered.
-felix-boolean:
-    cd external/felix-boolean && {{agda}} src/Felix/Boolean/All.agda
-
-# File and line counts per repo in the fetched corpus.
-corpus:
-    #!/usr/bin/env bash
-    set -uo pipefail
-    cd external 2>/dev/null || { echo "nothing fetched; run 'just fetch'"; exit 1; }
-    printf "%-32s %6s %8s  %s\n" repo files lines note
-    tf=0; tl=0
-    for d in */; do
-      r=${d%/}
-      fs=$(find "$r" \( -name '*.agda' -o -name '*.lagda*' \))
-      [ -n "$fs" ] || continue
-      n=$(echo "$fs" | wc -l); l=$(cat $fs | wc -l)
-      case "$r" in
-        agda-categories|agda-stdlib|cheshire|blag|jespercockx-agda-lecture-notes) note="fork, not counted" ;;
-        *) note=""; tf=$((tf+n)); tl=$((tl+l)) ;;
-      esac
-      printf "%-32s %6s %8s  %s\n" "$r" "$n" "$l" "$note"
-    done
-    printf "%-32s %6s %8s  %s\n" "TOTAL (authored)" "$tf" "$tl" ""
-
-# Remove this project's interface files.
+# Remove this project's generated Agda interfaces.
 clean:
     rm -rf _build
-
-# Also remove interfaces built inside the fetched repos.
-clean-all: clean
-    -find external -name _build -type d -prune -exec rm -rf {} + 2>/dev/null
