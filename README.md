@@ -88,7 +88,7 @@ $$\overline{\lambda_A}(m) = P \text{ if } \lambda_A(m) = O, \qquad \overline{\la
 
 $$P_{A \multimap B} = \lbrace s \in M_{A \multimap B}^{\mathrm{alt}} \mid s \upharpoonright M_A \in P_A \wedge s \upharpoonright M_B \in P_B \rbrace$$
 
-The justification is the function box: on the output side the System produces and the Environment consumes, and those roles reverse on the input side. He then derives the consequence that shapes the code: **the first move of any play in $A \multimap B$ must be in $B$**, since Opponent moves first while every opening move of $A$ is labelled $P$ after inversion.
+The justification is the function box: on the output side the System produces and the Environment consumes, and those roles reverse on the input side. In the full game model, enabling forces the first move of a play in $A \multimap B$ to be in $B$. This development represents polarity but not enabling; its value arenas recover that property because `PQ (val A)` is empty.
 
 **`src/Arena.agda` and `src/InteractionArrow.agda`.** Linear implication is that construction, and the arrow is strategies on it:
 
@@ -102,7 +102,7 @@ _-i>_ : Arena → Arena → Set
 A -i> B = Strategy (A ⊸ B)
 ```
 
-Since `⊸` is an operation on arenas, higher-order arenas such as `(A ⊸ B) ⊸ C` are ordinary types here, and `OQ (A ⊸ B)` computes to `PQ A ⊎ OQ B`: play opens in `B`, exactly as the inversion requires.
+Since `⊸` is an operation on arenas, expressions such as `(A ⊸ B) ⊸ C` are well typed. However, `OQ (A ⊸ B)` computes to `PQ A ⊎ OQ B`; only a value arena on the left forces opening in `B`. Faithful higher-order play requires an enabling relation, which is not yet represented here.
 
 ### Composition: parallel composition plus hiding
 
@@ -149,7 +149,7 @@ respond id-i (inj₂ o) = ask (inj₁ o) return
 
 Whichever side the question arrives on, copy it across and hand back the answer.
 
-### The boolean game, and `Bool⊥`
+### The boolean game, and partial observations
 
 **Semantics of Interaction §1, Example 1.1.** One opening request, two possible responses:
 
@@ -164,7 +164,7 @@ Bool⊥ : Set
 Bool⊥ = Maybe Bool
 ```
 
-`Bool⊥` is not a lifting invented for the parallel-or argument. It is that three-element strategy space, and `Maybe Bool` is literally it: `nothing` is the strategy that never answers, `just b` the two that do. That also answers the objection that Agda is total, so this `⊥` must be smuggled divergence: a value goes missing exactly when the context declines to supply it, which is the same notion of divergence `_≈obs_` is built on.
+Here `Bool⊥ = Maybe Bool` is the domain of a **partial observation**, not the carrier of `Strategy`. A finite `Tree` always returns when supplied with a total environment. `nothing` arises only from `runP` when a `PEnv` declines a requested answer; it models blocking for the finite sequentiality test.
 
 ## Why `A → B` is not enough
 
@@ -183,38 +183,38 @@ por (just false , just false)  = just false
 por (_          , _)           = nothing
 ```
 
-No sequential program implements it. Any sequential program must inspect one argument first: inspect the left and `por (⊥ , true⊥)` diverges before reaching the `true⊥` on the right; inspect the right and `por (true⊥ , ⊥)` diverges symmetrically. The proof in the repo is that case analysis, over the same `BoolStrategy` trees the AND example uses, with divergence supplied by a context that declines:
+No strategy in the finite `BoolStrategy` class implements it. Such a tree must return immediately or inspect one argument first: inspect the left and `por (nothing , just true)` blocks before reaching the `just true` on the right; inspect the right and `por (just true , nothing)` blocks symmetrically. The checked proof is that case analysis, with blocking supplied by a partial environment:
 
 ```agda
-no-sequential-por : ¬ (Σ BoolStrategy (λ s → Realizes s por))
-no-sequential-por (return b , realizes) = no-return-por b realizes
-no-sequential-por (ask (inj₁ left)  k , realizes) with realizes (nothing , just true)
+no-sequential-por-tree : ¬ (Σ BoolStrategy (λ s → RealizesTree s por))
+no-sequential-por-tree (return b , realizes) = no-return-por b realizes
+no-sequential-por-tree (ask (inj₁ left)  k , realizes) with realizes (nothing , just true)
 ... | ()
-no-sequential-por (ask (inj₁ right) k , realizes) with realizes (just true , nothing)
+no-sequential-por-tree (ask (inj₁ right) k , realizes) with realizes (just true , nothing)
 ... | ()
-no-sequential-por (ask (inj₂ ()) k , realizes)
+no-sequential-por-tree (ask (inj₂ ()) k , realizes)
 ```
 
-The careful reader will conclude from this that `-i>` simply has more morphisms than `→`, and this is the easiest step to slip on. The collapse
+There are two related maps here, and keeping them separate avoids an easy overclaim. The total collapse
 
 $$\Large \mathrm{ext} : (A \mathbin{\text{-i>}} B) \longrightarrow ([[A]] \to [[B]])$$
 
-fails to be injective *and* fails to be surjective, and the two failures are separate results:
+forgets query order, while `evalP` interprets finite Boolean strategies over partial inputs:
 
-| | What fails | Proved by |
+| Map | What is proved | Witness |
 | --- | --- | --- |
-| Not injective | `andLR` and `andRL` differ as trees, agree as functions | `src/Audit.agda` |
-| Not surjective | `por` is a function with no sequential strategy | `no-sequential-por` in `src/BoolExample.agda` |
+| `ext` | Total observation does not reflect the distinction made by `_≈obs_` | `andLR-i≈ext-andRL-i` and `andLR-i≉andRL-i` in `src/Audit.agda` |
+| `evalP` | No finite `BoolStrategy` realizes `por` on partial inputs | `no-sequential-por` in `src/BoolExample.agda` |
 
-So `A → B` is at once too **coarse**, identifying computations that differ, and too **large**, containing functions no sequential program realizes. `ExtensionalArrow` in `src/Extensional.agda` carries realizability as an explicit witness for exactly this reason.
+Thus total functions are too **coarse** to record query order. Separately, the partial Boolean function `por` lies outside the image of the finite interpreter `evalP`. `ExtensionalArrow` in `src/Extensional.agda` expresses the general idea of carrying a strategy together with its total extension, but this repository does not instantiate it with the `por` result.
 
 The important part is where the defect sits:
 
 > `A → B` tells you which output depends on which completed input. It does not tell you how the computation is allowed to acquire that input.
 
-The type `por : Bool⊥ × Bool⊥ → Bool⊥` is already correct. It is the *arrow* that is too weak. The extensional hom-set offers all suitable functions, while the language realizes only some of them. Making the hom-set strategies puts the legal pattern of asking and answering inside the morphism, so a sequential and a parallel-or differ as morphisms rather than only in commentary about them.
+The type `por : Bool⊥ × Bool⊥ → Bool⊥` is already correct; what it omits is how inputs may be demanded. Making morphisms strategies records that discipline. In the finite Boolean fragment, `no-sequential-por` proves that no such sequential dialogue tree realizes `por`. A concurrent game model is intended to recover genuinely parallel observations; `src/Concurrent.agda` only sketches the required event order and does not yet construct that morphism.
 
-The same gap opens at higher order. Extensionally, the argument of `f : (A → B) → C` is a completed function, a finished table. A real program interacts with that argument: ask at `a₁`, receive `b₁`, choose `a₂` in light of `b₁`, and so on, then produce `c`. That dialogue is what game semantics denotes, and because `⊸` is an operation on arenas it is an ordinary type here: `(A ⊸ B) ⊸ C` is the arena whose plays are that exchange.
+The same motivation applies at higher order. Extensionally, the argument of `f : (A → B) → C` is a completed function; game semantics instead records a dialogue with it. This code can form the arena expression `(A ⊸ B) ⊸ C`, but without enabling and general-middle composition it does not yet model the full higher-order exchange.
 
 The first objection is always to widen the domain, `(A × State × History × …) → B`, and be done. Abramsky answers it twice in [*Semantics of Interaction*](https://arxiv.org/abs/1312.0121) §1. Once about models in general, where games "provide an explicit representation of the environment, and hence model interaction in an intrinsic fashion", while a labelled transition system has to model it "using some additional structure, typically a *synchronization algebra* on the labels". Widening the domain is that additional structure, relocated into the type. And once about functions in particular: reading `sab ∈ σ` as a generalized graph, he notes that ordinary relations "describe a single stimulus-response event only", whereas strategies "describe repeated interactions between the System and the Environment". Currying gives you a bigger single event, not repeated interaction.
 
@@ -226,7 +226,7 @@ This is the objection worth answering directly, because dialogue, interaction an
 
 **There is no transition relation.** Nothing in the development has the shape `_⟶_ : Config → Config → Set`, no scheduler, no step index, no fuel, no state threaded through anything. The single trace-shaped definition, `Legal : List (Move G) → Set` in `src/Game.agda`, is not used by any other module.
 
-**A strategy is a value, not a run.** `Tree` is an ordinary inductive type. Its `ask` node stores a *function* `Answer A q → Tree A X`, the entire family of responses at once, not one step of one execution. A strategy is a finished mathematical object that happens to have branching structure, in the same way a power series is a finished object with coefficient structure.
+**A strategy is a value, not a run.** `Tree` is an ordinary inductive type. Its `ask` node stores a *function* `PA G q → Tree G X`, the entire family of responses at once, not one step of one execution. A strategy is a finished mathematical object that happens to have branching structure, in the same way a power series is a finished object with coefficient structure.
 
 **Observation is a fold, not an interpreter.** `run` is structurally recursive and total:
 
@@ -236,7 +236,7 @@ run (return x) ρ = x
 run (ask q k)  ρ = run (k (ρ q)) ρ
 ```
 
-It consumes a complete environment `ρ : ⟦ A ⟧`, so there is nothing to wait for and no order in which things happen. It is the unique homomorphism from the tree into the value.
+It consumes a complete environment `ρ : Env G`. For first-order value arenas, `envOf` turns a game value into the required arrow environment. There is nothing to wait for: `run` folds an already-built tree.
 
 **Composition is substitution, not sequencing.** `g ∘i f` does not mean "run `f`, then run `g`". Each question `g` would have asked of `B` is replaced by the tree `f` supplies, using the bind on trees:
 
@@ -266,7 +266,7 @@ ext-compose : ∀ {A B C : Game} (g : val B -i> val C) (f : val A -i> val B) →
   ∀ ρ q → ext {A} {C} (g ∘i f) ρ q ≡ ext {B} {C} g (ext {A} {B} f ρ) q
 ```
 
-Two categories of meanings, and a functor between them. That is a denotational design carried out between two semantic levels, with the richer level on top. It is not an operational model of the poorer one. At which point the natural reply is to quotient by observation and call the functions the real meaning. [AJM](https://arxiv.org/abs/1311.6125) do exactly that, and it repays following what they get. §4.1 defines the intrinsic preorder by testing against the Sierpinski game $\Sigma$, which has one question and one possible answer: $x \lesssim_A y$ iff $x;\alpha \sqsubseteq y;\alpha$ for every $\alpha : A \to \Sigma$. The lemmas after it establish that this preorder is pointwise at each type constructor, so the quotient really is extensional. §4.3 then presents the quotient concretely: $D(A)$ is the poset of strategies modulo the induced equivalence, and a morphism $A \to_E B$ is a monotone function $D(A) \to D(B)$ that coincides with $D(\sigma)$ for some strategy $\sigma$, a function "sequentially realised" by $\sigma$ in their phrase. That clause is the whole answer to the objection: quotienting collapses intensional distinctions without ever enlarging the hom-set, so the functions in the extensional model are exactly those some strategy realizes. Theorem 4.15 then proves that model fully abstract for PCF, with Milner's Context Lemma dropping out as a corollary rather than being assumed. `por` realizes nothing and is not among its morphisms.
+This gives two semantic levels and a checked observation homomorphism between them. `src/Category.agda` bundles the strategy side as a category and packages `ext` with its laws in a small functor-shaped record; it deliberately does not claim a complete AJM quotient or a fully abstract model. In AJM, the corresponding construction uses typed tests into the Sierpiński game and quotients by the induced intrinsic equivalence. The partial-environment relation below is a finite, concrete proxy for that idea, not a proof that the two constructions coincide.
 
 **The interaction is closed, not performed.** Even the derivation of an ordinary function from a strategy is equational rather than procedural. A value becomes a strategy from the empty game, and observation closes the dialogue:
 
@@ -289,15 +289,15 @@ ext-via-closure : ∀ {A B : Game} (f : val A -i> val B) (a : ⟦ A ⟧) →
 
 - `src/Game.agda` is the one-round question/answer arena used as an object of values.
 - `src/Arena.agda` builds arenas: `val`, role reversal `^⊥`, tensor `⊗`, and linear implication `⊸`, with `OQ`/`OA` and `PQ`/`PA` reading off each side.
-- `src/Strategy.agda` defines dialogue trees over an arena, their total and partial interpretations, strategies, extensional equality, and the contextual equivalence the category is built on.
+- `src/Strategy.agda` defines dialogue trees over an arena, their total and partial interpretations, strategies, extensional equality, and the partial-environment observational equivalence used by the category.
 - `src/InteractionArrow.agda` defines `A -i> B = Strategy (A ⊸ B)`, copycat, interaction, hiding, composition, and the category laws.
 - `src/Extensional.agda` derives `ext`, closes strategies with quoted values, and records which ordinary functions are strategy-realizable.
 - `src/BoolExample.agda` gives two AND strategies that query their inputs in opposite orders but compute the same Boolean function, and proves that no sequential dialogue tree realizes parallel-or.
-- `src/Concurrent.agda` replaces a total schedule with a partial order, so independent events stay unordered while both cause a later event.
-- `src/Category.agda` bundles the interaction category and observation functor as records: hom-setoids, identity, composition, congruence and the laws in `SetoidCategory`, and `ext` with its laws in `SetoidFunctor`.
+- `src/Concurrent.agda` gives a small event poset in which two independent causes share a later effect; it does not yet define concurrent strategies.
+- `src/Category.agda` bundles the first-order value-game category and packages `ext`, congruence, identity, and composition in a custom functor-shaped record whose target operations are written directly.
 - `src/Audit.agda` separates the three relations: `_≡_` tells the two AND dialogue trees apart, `_≈ext_` identifies the strategies built from them, and `_≈obs_` tells them apart again.
 
-## The equivalence the category is built on
+## The observational relation used by the category
 
 **AJM §4.1** define the *intrinsic preorder* by testing against the Sierpinski game $\Sigma$, which has one question and one possible answer:
 
@@ -307,7 +307,7 @@ $$x \lesssim_A y \iff \forall \alpha : A \to \Sigma. x ; \alpha \sqsubseteq y ; 
 
 A strategy is compared with another by what every test can observe of it, and the extensional model is the quotient by the induced equivalence.
 
-**`src/Strategy.agda`** tests against contexts that may decline to answer:
+**`src/Strategy.agda`** quantifies over partial environments that may decline to answer:
 
 ```agda
 PEnv : Arena → Set
@@ -318,7 +318,7 @@ PEnv G = (q : PQ G) → Maybe (PA G q)
 σ ≈obs τ = ∀ q ρ → runP (respond σ q) ρ ≡ runP (respond τ q) ρ
 ```
 
-The declining is the point. With total environments every context is itself extensional and observes nothing beyond the induced function, so the relation would collapse. Declining is this development's stand-in for $(x;\alpha)\downarrow$: a context that refuses one question observes whether a strategy needed it.
+The declining is the point. Total environments observe only the induced function; a partial environment can also reveal which question was demanded first. This is a simple stand-in for convergence testing, not the full AJM quantification over typed test strategies.
 
 Extensional equality is kept under its own name and derived, so the two orders of observation are related rather than confused:
 
@@ -330,7 +330,18 @@ Extensional equality is kept under its own name and derived, so the two orders o
 
 ## What this code does and does not establish
 
-It establishes that `-i>` is a category whose hom-relation is contextual, that `ext` preserves identity and composition, that two dialogue trees with different query orders induce the same Boolean function while remaining distinguishable by a context, and that no dialogue tree realizes parallel-or, proved against `runP`, the same interpreter the hom-relation uses.
+It establishes a category on games whose morphisms are strategies `val A -i> val B` modulo partial-environment observation. It proves that `ext` preserves identity and composition, that two finite dialogue trees with different query orders induce the same Boolean function while remaining observationally distinct, and that no morphism has parallel-or as its collapse.
+
+That last theorem is stated in the arrow rather than about trees:
+
+```agda
+Realizes : (val Inputs -i> val Output) → (Bool⊥ × Bool⊥ → Bool⊥) → Set
+Realizes σ f = ∀ p → extP {Inputs} {Output} σ (flat-value p) tt ≡ f p
+
+no-sequential-por : ¬ (Σ (val Inputs -i> val Output) (λ σ → Realizes σ por))
+```
+
+`extP` is the partial counterpart of `ext`, collapsing a strategy against a value whose questions a context may decline. The case analysis over dialogue trees is the lemma `no-sequential-por-tree` behind it.
 
 "Category" and "functor" name checked records rather than three standalone equations. `src/Category.agda` instantiates
 
@@ -345,15 +356,15 @@ with `StrategySetoid (val A ⊸ val B)` as its hom-setoids, so identity, composi
           g ≈obs g′ → f ≈obs f′ → g ∘i f ≈obs g′ ∘i f′
 ```
 
-are all fields that had to be supplied. Objects are games because composition needs a value arena in the middle; the arenas on either side stay arbitrary. Observation is then
+are all fields that had to be supplied. Objects are games, and the bundled hom from `A` to `B` is specifically `Strategy (val A ⊸ val B)`. The standalone composition operator permits arbitrary outer arenas, but those are not additional objects of this category. Observation is then
 
 ```agda
 observation : SetoidFunctor interaction
 ```
 
-carrying `ext` together with its congruence, identity and composition laws. Its target is written out as functions between game values compared pointwise, rather than bundled as a second category, because composition of functions respects pointwise equality only given extensionality, which this development does not assume.
+carrying `ext` together with its congruence, identity and composition laws. `SetoidFunctor` is a custom functor-shaped record whose target objects, equality, identity, and composition are written directly rather than bundled as a second category. That is a choice of scope; a category of functions with pointwise equality can also be packaged constructively without function extensionality.
 
-The distinguishing context is explicit. It answers the right input and declines the left:
+The distinguishing partial environment is explicit. It answers the right input and declines the left:
 
 ```agda
 right-only : PEnv (val Inputs ⊸ val Output)
@@ -365,7 +376,7 @@ andLR-i≈ext-andRL-i : andLR-i ≈ext andRL-i
 andLR-i≉andRL-i : ¬ (andLR-i ≈obs andRL-i)
 ```
 
-Query order is therefore visible inside the equational theory, not only in `_≡_` on syntax.
+Query order is therefore visible to this partial-environment observational relation, not only in `_≡_` on syntax.
 
 Limits worth stating plainly, since they are where the development would have to grow next:
 
@@ -376,10 +387,10 @@ Limits worth stating plainly, since they are where the development would have to
   _∘i_ : ∀ {A C} {B : Game} → (val B -i> C) → (A -i> val B) → (A -i> C)
   ```
 
-  The outer arenas stay general, so higher-order arenas compose on the outside. With a general arena in the middle the two strategies can question each other back and forth across it, and the recursion stops being structural. That is the infinite chattering problem, and showing $\sigma;\tau$ total in its presence is a development of its own, which *Semantics of Interaction* §2 gives a section to. The restriction states that limit in the type rather than postulating past it.
+  The standalone operator accepts arbitrary outer arena expressions. With a general arena in the middle the two strategies can question each other back and forth across it, and the recursion stops being structural. That is the infinite chattering problem, and showing $\sigma;\tau$ total in its presence is a development of its own, which *Semantics of Interaction* §2 gives a section to. The restriction states that limit in the type rather than postulating past it.
 - `Move`, `polarity` and `Legal` in `src/Game.agda` are defined but unused: legality is carried by the arena's two sides rather than by a predicate on plays.
 
-`src/Concurrent.agda` is likewise only a gesture at its source. [Abramsky and Melliès](https://www.cs.ox.ac.uk/people/samson.abramsky/cg.pdf) replace plays-as-sequences with a domain of *positions*, ordered by "reachable by playing further moves", and take a strategy to be a continuous closure operator on that domain, with composition given by composing closure operators. Our module builds the partial order and exhibits two independent events with a common cause; it does not yet carry strategies over it.
+`src/Concurrent.agda` is likewise only a gesture at its source. [Abramsky and Melliès](https://www.cs.ox.ac.uk/people/samson.abramsky/cg.pdf) replace plays-as-sequences with a domain of *positions*, ordered by "reachable by playing further moves", and take a strategy to be a continuous closure operator on that domain, with composition given by composing closure operators. Our module builds the partial order and exhibits two independent causes with a common later effect; it does not yet carry strategies over it.
 
 ## Background
 
@@ -411,7 +422,7 @@ Entry points, if the primary papers are heavy going:
 - P.-L. Curien, *Definability and Full Abstraction*, a survey of how the question was posed and answered. [PDF](https://www.irif.fr/~curien/gordon-fs-plc.pdf)
 - Abramsky's publication list, organized by theme. [Index](https://www.cs.ox.ac.uk/people/samson.abramsky/pubs.html)
 
-A caution the literature is explicit about, and which this repo should not overstate. Nobody proved that the quotient of strategies is isomorphic to *all* functions `A → B`. The point runs the other way: games cut the function space down to what is sequentially realizable. So `-i>` does not simply hold more morphisms than `→`. It holds more structure per computation while realizing fewer extensional functions, and `src/Extensional.agda` reflects this by recording realizability as a witness rather than assuming it.
+A caution the literature is explicit about, and which this repo should not overstate: the quotient of strategies is not simply *all* functions `A → B`. Published game models characterize a sequentially realizable fragment. This repository proves the corresponding non-realizability statement only for `por` and the finite `BoolStrategy`/`evalP` fragment. `src/Extensional.agda` records realizability witnesses in general, but does not prove a characterization of its image.
 
 ## Type-checking
 
