@@ -43,7 +43,7 @@ ci: doctor check-all
 stdlib-info:
     #!/usr/bin/env bash
     echo "Agda:   $({{agda}} --version | head -1)"
-    echo "Project: $(sed -n 's/^depend:[[:space:]]*//p' interaction-arrows-agda.agda-lib)"
+    echo "Project: $(sed -n 's/^depend:[[:space:]]*//p' interaction-arrows.agda-lib)"
     app=$({{agda}} --print-agda-app-dir)
     echo "Registered:"
     found=0
@@ -80,7 +80,7 @@ stdlib-use VERSION:
       [ "$(sed -n 's/^name:[[:space:]]*//p' "$file")" = "$name" ] && found=1
     done < "$app/libraries" 2>/dev/null || true
     [ "$found" -eq 1 ] || { echo "$name is not registered; install or register it first"; exit 1; }
-    sed -i -E "s/^depend:.*/depend: $name/" interaction-arrows-agda.agda-lib
+    sed -i -E "s/^depend:.*/depend: $name/" interaction-arrows.agda-lib
     echo "project now uses $name"
 
 # Clone, register, and select an upstream stdlib release in the user data folder.
